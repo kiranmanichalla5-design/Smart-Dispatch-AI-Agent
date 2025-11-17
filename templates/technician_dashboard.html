@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Technician Dashboard - Smart Dispatch Agent</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        body {
+            background-color: #f5f5f5;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .dashboard-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .stat-card {
+            background: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .stat-label {
+            color: #666;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+        }
+        .technician-card {
+            background: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+            border-left: 4px solid #ddd;
+        }
+        .technician-card:hover {
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transform: translateX(5px);
+        }
+        .technician-card.available {
+            border-left-color: #28a745;
+        }
+        .technician-card.nearly-full {
+            border-left-color: #ffc107;
+        }
+        .technician-card.fully-booked {
+            border-left-color: #dc3545;
+        }
+        .status-badge {
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .priority-badge {
+            padding: 0.3rem 0.8rem;
+            border-radius: 15px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .progress-bar-custom {
+            height: 25px;
+            border-radius: 15px;
+            background-color: #e9ecef;
+        }
+        .progress-bar-custom .progress-bar {
+            border-radius: 15px;
+            transition: width 0.6s ease;
+        }
+        .technician-name {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+        .technician-id {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        .info-row {
+            margin: 0.5rem 0;
+            display: flex;
+            align-items: center;
+        }
+        .info-label {
+            font-weight: 600;
+            color: #666;
+            min-width: 150px;
+        }
+        .loading {
+            text-align: center;
+            padding: 3rem;
+        }
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
+        .filter-section {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 10px;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .dispatch-item {
+            background: #f8f9fa;
+            padding: 0.75rem;
+            margin: 0.5rem 0;
+            border-radius: 5px;
+            border-left: 3px solid #ddd;
+        }
+        .dispatch-item.critical {
+            border-left-color: #dc3545;
+        }
+        .dispatch-item.high {
+            border-left-color: #ffc107;
+        }
+        .dispatch-item.normal {
+            border-left-color: #17a2b8;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="dashboard-header">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h1><i class="bi bi-people-fill"></i> Technician Dashboard</h1>
+                    <p class="mb-0">Smart Dispatch Agent - Real-time Status Monitoring</p>
+                </div>
+                <div class="col-md-4 text-end">
+                    <button class="btn btn-light" onclick="refreshData()">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Statistics Cards -->
+        <div class="row mb-4" id="statsSection">
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-number" id="totalTechs">-</div>
+                    <div class="stat-label">Total Technicians</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-number text-success" id="availableTechs">-</div>
+                    <div class="stat-label">Available</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-number text-primary" id="optimizedDispatches">-</div>
+                    <div class="stat-label">Optimized Dispatches</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-number text-warning" id="pendingDispatches">-</div>
+                    <div class="stat-label">Pending Dispatches</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filter-section">
+            <div class="row">
+                <div class="col-md-3">
+                    <label class="form-label">Filter by Status</label>
+                    <select class="form-select" id="statusFilter" onchange="filterTechnicians()">
+                        <option value="all">All Status</option>
+                        <option value="Available">Available</option>
+                        <option value="Nearly Full">Nearly Full</option>
+                        <option value="Fully Booked">Fully Booked</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Filter by State</label>
+                    <select class="form-select" id="stateFilter" onchange="filterTechnicians()">
+                        <option value="all">All States</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Filter by Skill</label>
+                    <select class="form-select" id="skillFilter" onchange="filterTechnicians()">
+                        <option value="all">All Skills</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Search</label>
+                    <input type="text" class="form-control" id="searchInput" placeholder="Search by name..." onkeyup="filterTechnicians()">
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div class="loading" id="loadingState">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3">Loading technicians data...</p>
+        </div>
+
+        <!-- Technicians List -->
+        <div id="techniciansList" style="display: none;">
+            <!-- Technicians will be inserted here -->
+        </div>
+    </div>
+
+    <!-- Modal for Technician Details -->
+    <div class="modal fade" id="technicianModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalTitle">Technician Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="modalBody">
+                    <div class="text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let allTechnicians = [];
+        let filteredTechnicians = [];
+
+        // Load data on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStats();
+            loadTechnicians();
+            setInterval(refreshData, 30000); // Auto-refresh every 30 seconds
+        });
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('totalTechs').textContent = data.stats.total_technicians;
+                    document.getElementById('availableTechs').textContent = data.stats.available_technicians;
+                    document.getElementById('optimizedDispatches').textContent = data.stats.optimized_dispatches;
+                    document.getElementById('pendingDispatches').textContent = data.stats.pending_dispatches;
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        async function loadTechnicians() {
+            try {
+                const response = await fetch('/api/technicians');
+                const data = await response.json();
+                
+                if (data.success) {
+                    allTechnicians = data.technicians;
+                    populateFilters();
+                    filterTechnicians();
+                    document.getElementById('loadingState').style.display = 'none';
+                    document.getElementById('techniciansList').style.display = 'block';
+                } else {
+                    alert('Error loading technicians: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error loading technicians:', error);
+                document.getElementById('loadingState').innerHTML = 
+                    '<div class="alert alert-danger">Error loading data. Please refresh the page.</div>';
+            }
+        }
+
+        function populateFilters() {
+            // Populate state filter
+            const states = [...new Set(allTechnicians.map(t => t.State).filter(s => s))];
+            const stateFilter = document.getElementById('stateFilter');
+            states.forEach(state => {
+                const option = document.createElement('option');
+                option.value = state;
+                option.textContent = state;
+                stateFilter.appendChild(option);
+            });
+
+            // Populate skill filter
+            const skills = [...new Set(allTechnicians.map(t => t.Primary_skill).filter(s => s))];
+            const skillFilter = document.getElementById('skillFilter');
+            skills.forEach(skill => {
+                const option = document.createElement('option');
+                option.value = skill;
+                option.textContent = skill;
+                skillFilter.appendChild(option);
+            });
+        }
+
+        function filterTechnicians() {
+            const statusFilter = document.getElementById('statusFilter').value;
+            const stateFilter = document.getElementById('stateFilter').value;
+            const skillFilter = document.getElementById('skillFilter').value;
+            const searchInput = document.getElementById('searchInput').value.toLowerCase();
+
+            filteredTechnicians = allTechnicians.filter(tech => {
+                const matchStatus = statusFilter === 'all' || tech.Availability_Status === statusFilter;
+                const matchState = stateFilter === 'all' || tech.State === stateFilter;
+                const matchSkill = skillFilter === 'all' || tech.Primary_skill === skillFilter;
+                const matchSearch = !searchInput || 
+                    (tech.Name && tech.Name.toLowerCase().includes(searchInput)) ||
+                    (tech.Technician_id && tech.Technician_id.toLowerCase().includes(searchInput));
+
+                return matchStatus && matchState && matchSkill && matchSearch;
+            });
+
+            displayTechnicians();
+        }
+
+        function displayTechnicians() {
+            const container = document.getElementById('techniciansList');
+            container.innerHTML = '';
+
+            if (filteredTechnicians.length === 0) {
+                container.innerHTML = '<div class="alert alert-info">No technicians found matching your filters.</div>';
+                return;
+            }
+
+            filteredTechnicians.forEach(tech => {
+                const card = createTechnicianCard(tech);
+                container.appendChild(card);
+            });
+        }
+
+        function createTechnicianCard(tech) {
+            const div = document.createElement('div');
+            div.className = `technician-card ${tech.Availability_Status.toLowerCase().replace(' ', '-')}`;
+            
+            const utilizationPercent = tech.Utilization_Percentage || 0;
+            const progressColor = utilizationPercent < 50 ? 'success' : 
+                                 utilizationPercent < 80 ? 'warning' : 'danger';
+
+            div.innerHTML = `
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="technician-name">
+                            <i class="bi bi-person-circle"></i> ${tech.Name || 'N/A'}
+                        </div>
+                        <div class="technician-id">ID: ${tech.Technician_id}</div>
+                        <div class="mt-2">
+                            <span class="status-badge bg-${tech.status_badge} text-white">
+                                ${tech.Availability_Status}
+                            </span>
+                            ${tech.priority_level && tech.priority_level !== 'None' ? `
+                                <span class="priority-badge bg-${tech.priority_color} text-white ms-2">
+                                    <i class="bi bi-exclamation-triangle"></i> ${tech.priority_level} Priority
+                                </span>
+                            ` : ''}
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <button class="btn btn-sm btn-outline-primary" onclick="showTechnicianDetails('${tech.Technician_id}')">
+                            <i class="bi bi-eye"></i> View Details
+                        </button>
+                    </div>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="info-row">
+                            <span class="info-label"><i class="bi bi-geo-alt"></i> Location:</span>
+                            <span>${tech.City || 'N/A'}, ${tech.State || 'N/A'}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label"><i class="bi bi-tools"></i> Primary Skill:</span>
+                            <span>${tech.Primary_skill || 'N/A'}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label"><i class="bi bi-clipboard-check"></i> Assigned Dispatches:</span>
+                            <span><strong>${tech.Assigned_Dispatches || 0}</strong></span>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="info-row">
+                            <span class="info-label">Workload:</span>
+                            <span>${tech.Current_assignments || 0} / ${tech.Workload_capacity || 0}</span>
+                        </div>
+                        <div class="progress-bar-custom mt-2">
+                            <div class="progress-bar bg-${progressColor}" 
+                                 role="progressbar" 
+                                 style="width: ${utilizationPercent}%"
+                                 aria-valuenow="${utilizationPercent}" 
+                                 aria-valuemin="0" 
+                                 aria-valuemax="100">
+                                ${utilizationPercent.toFixed(1)}%
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <small class="text-muted">
+                                Critical: ${tech.Critical_Count || 0} | 
+                                High: ${tech.High_Count || 0} | 
+                                Normal: ${tech.Normal_Count || 0} | 
+                                Low: ${tech.Low_Count || 0}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            return div;
+        }
+
+        async function showTechnicianDetails(technicianId) {
+            const modal = new bootstrap.Modal(document.getElementById('technicianModal'));
+            const modalBody = document.getElementById('modalBody');
+            const modalTitle = document.getElementById('modalTitle');
+            
+            const tech = allTechnicians.find(t => t.Technician_id === technicianId);
+            if (tech) {
+                modalTitle.textContent = `${tech.Name} - Details`;
+            }
+
+            modalBody.innerHTML = '<div class="text-center"><div class="spinner-border"></div></div>';
+            modal.show();
+
+            try {
+                const dispatchResponse = await fetch(`/api/technician/${technicianId}/dispatches`);
+                const techResponse = await fetch('/api/technicians');
+
+                const dispatchData = await dispatchResponse.json();
+                const techData = await techResponse.json();
+                const technician = techData.technicians.find(t => t.Technician_id === technicianId);
+
+                if (techData.success && technician) {
+                    modalBody.innerHTML = `
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <h6><i class="bi bi-person"></i> Technician Information</h6>
+                                <p><strong>ID:</strong> ${technician.Technician_id}</p>
+                                <p><strong>Name:</strong> ${technician.Name}</p>
+                                <p><strong>Skill:</strong> ${technician.Primary_skill}</p>
+                                <p><strong>Location:</strong> ${technician.City}, ${technician.State}</p>
+                                <p><strong>Status:</strong> 
+                                    <span class="badge bg-${technician.status_badge}">${technician.Availability_Status}</span>
+                                </p>
+                            </div>
+                            <div class="col-md-6">
+                                <h6><i class="bi bi-graph-up"></i> Performance</h6>
+                                <p><strong>Workload:</strong> ${technician.Current_assignments}/${technician.Workload_capacity}</p>
+                                <p><strong>Utilization:</strong> ${technician.Utilization_Percentage}%</p>
+                                <p><strong>Total Dispatches:</strong> ${technician.Assigned_Dispatches}</p>
+                                <p><strong>Avg Confidence:</strong> ${(technician.Avg_Confidence || 0).toFixed(2)}</p>
+                            </div>
+                        </div>
+                        <hr>
+                        <h6><i class="bi bi-list-task"></i> Assigned Dispatches (${dispatchData.count || 0})</h6>
+                        <div id="dispatchesList">
+                            ${dispatchData.success && dispatchData.dispatches.length > 0 ? 
+                                dispatchData.dispatches.map(d => `
+                                    <div class="dispatch-item ${d.Priority.toLowerCase()}">
+                                        <div class="d-flex justify-content-between">
+                                            <div>
+                                                <strong>Dispatch #${d.Dispatch_id}</strong>
+                                                <span class="badge bg-${d.priority_badge} ms-2">${d.Priority}</span>
+                                            </div>
+                                            <small class="text-muted">${d.Required_skill}</small>
+                                        </div>
+                                        <div class="mt-1">
+                                            <small>
+                                                <i class="bi bi-geo-alt"></i> ${d.City}, ${d.State} | 
+                                                <i class="bi bi-clock"></i> ${d.Appointment_start_datetime || 'N/A'}
+                                            </small>
+                                        </div>
+                                    </div>
+                                `).join('') : 
+                                '<p class="text-muted">No dispatches assigned.</p>'
+                            }
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                modalBody.innerHTML = `<div class="alert alert-danger">Error loading details: ${error.message}</div>`;
+            }
+        }
+
+        function refreshData() {
+            document.getElementById('loadingState').style.display = 'block';
+            document.getElementById('techniciansList').style.display = 'none';
+            loadStats();
+            loadTechnicians();
+        }
+    </script>
+</body>
+</html>
+
