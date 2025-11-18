@@ -1,0 +1,74 @@
+[
+  {
+    "priority": "INFO",
+    "category": "System Status",
+    "message": "Smart Dispatch Scheduler started",
+    "details": "Automated monitoring and dispatch processing is now active",
+    "metric_value": null,
+    "timestamp": "2025-11-18T10:04:34.459805",
+    "key": "System Status_Smart Dispatch Scheduler started"
+  },
+  {
+    "priority": "WARNING",
+    "category": "Dispatch Agent",
+    "message": "Dispatch agent encountered issues",
+    "details": "Traceback (most recent call last):\n  File \"C:\\Users\\ftrhack93\\Downloads\\Test_Folder\\enhanced_dispatch_agent.py\", line 809, in <module>\n    main()\n    ~~~~^^\n  File \"C:\\Users\\ftrhack93\\Downloads\\Test_F",
+    "metric_value": null,
+    "timestamp": "2025-11-18T10:38:22.944055",
+    "key": "Dispatch Agent_Dispatch agent encountered issues"
+  },
+  {
+    "priority": "INFO",
+    "category": "System Status",
+    "message": "Smart Dispatch Scheduler started",
+    "details": "Automated monitoring and dispatch processing is now active",
+    "metric_value": null,
+    "timestamp": "2025-11-18T10:47:02.488214",
+    "key": "System Status_Smart Dispatch Scheduler started"
+  },
+  {
+    "priority": "WARNING",
+    "category": "Dispatch Agent",
+    "message": "Dispatch agent encountered issues",
+    "details": "Traceback (most recent call last):\n  File \"C:\\Users\\ftrhack93\\Downloads\\Test_Folder\\enhanced_dispatch_agent.py\", line 809, in <module>\n    main()\n    ~~~~^^\n  File \"C:\\Users\\ftrhack93\\Downloads\\Test_F",
+    "metric_value": null,
+    "timestamp": "2025-11-18T11:13:58.159251",
+    "key": "Dispatch Agent_Dispatch agent encountered issues"
+  },
+  {
+    "priority": "WARNING",
+    "category": "Dispatch Agent",
+    "message": "Dispatch agent encountered issues",
+    "details": "Traceback (most recent call last):\n  File \"C:\\Users\\ftrhack93\\Downloads\\Test_Folder\\enhanced_dispatch_agent.py\", line 809, in <module>\n    main()\n    ~~~~^^\n  File \"C:\\Users\\ftrhack93\\Downloads\\Test_F",
+    "metric_value": null,
+    "timestamp": "2025-11-18T11:53:58.135438",
+    "key": "Dispatch Agent_Dispatch agent encountered issues"
+  },
+  {
+    "priority": "WARNING",
+    "category": "Dispatch Agent",
+    "message": "Dispatch agent encountered issues",
+    "details": "Traceback (most recent call last):\n  File \"C:\\Users\\ftrhack93\\Downloads\\Test_Folder\\enhanced_dispatch_agent.py\", line 809, in <module>\n    main()\n    ~~~~^^\n  File \"C:\\Users\\ftrhack93\\Downloads\\Test_F",
+    "metric_value": null,
+    "timestamp": "2025-11-18T12:33:58.333155",
+    "key": "Dispatch Agent_Dispatch agent encountered issues"
+  },
+  {
+    "priority": "WARNING",
+    "category": "Dispatch Agent",
+    "message": "Dispatch agent encountered issues",
+    "details": "Traceback (most recent call last):\n  File \"C:\\Users\\ftrhack93\\Downloads\\Test_Folder\\enhanced_dispatch_agent.py\", line 810, in <module>\n    main()\n    ~~~~^^\n  File \"C:\\Users\\ftrhack93\\Downloads\\Test_F",
+    "metric_value": null,
+    "timestamp": "2025-11-18T13:13:58.149212",
+    "key": "Dispatch Agent_Dispatch agent encountered issues"
+  },
+  {
+    "priority": "WARNING",
+    "category": "Dispatch Agent",
+    "message": "Dispatch agent encountered issues",
+    "details": "Traceback (most recent call last):\n  File \"C:\\Users\\ftrhack93\\Downloads\\Test_Folder\\enhanced_dispatch_agent.py\", line 810, in <module>\n    main()\n    ~~~~^^\n  File \"C:\\Users\\ftrhack93\\Downloads\\Test_F",
+    "metric_value": null,
+    "timestamp": "2025-11-18T13:53:58.658963",
+    "key": "Dispatch Agent_Dispatch agent encountered issues"
+  }
+]

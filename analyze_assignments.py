@@ -322,6 +322,81 @@ def check_available_technicians_for_pending():
     cursor.close()
     conn.close()
 
+def analyze_dispatch_metrics():
+    """Analyze routing speed, cost, and SLA compliance"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS "team_core_flux"."dispatch_metrics" (
+                dispatch_id BIGINT PRIMARY KEY,
+                technician_id TEXT,
+                priority TEXT,
+                required_skill TEXT,
+                state TEXT,
+                routing_seconds INTEGER,
+                estimated_completion_minutes INTEGER,
+                travel_km NUMERIC,
+                operational_cost NUMERIC,
+                fallback_technicians JSONB,
+                burnout_risk BOOLEAN,
+                sla_breached BOOLEAN,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+        """)
+        conn.commit()
+
+        cursor.execute("""
+            SELECT 
+                COALESCE(AVG(routing_seconds) / 60.0, 0) as avg_routing_minutes,
+                COALESCE(AVG(estimated_completion_minutes), 0) as avg_etc_minutes,
+                COALESCE(AVG(operational_cost), 0) as avg_cost,
+                COALESCE(SUM(CASE WHEN sla_breached THEN 1 ELSE 0 END), 0) as sla_breaches,
+                COUNT(*) as total_records,
+                COALESCE(SUM(CASE WHEN burnout_risk THEN 1 ELSE 0 END), 0) as burnout_alerts
+            FROM "team_core_flux"."dispatch_metrics";
+        """)
+        summary = cursor.fetchone()
+        total_records = summary[4] or 0
+        sla_breaches = summary[3] or 0
+        sla_compliance = 0.0
+        if total_records > 0:
+            sla_compliance = 100 - (sla_breaches / total_records) * 100
+
+        print("\n" + "="*80)
+        print("DISPATCH METRICS (Routing & Cost)")
+        print("="*80)
+        print(f"Average Routing Time: {(summary[0] or 0):.2f} minutes")
+        print(f"Average Completion Time: {(summary[1] or 0):.2f} minutes")
+        print(f"Average Operational Cost: ${(summary[2] or 0):.2f}")
+        print(f"SLA Compliance: {sla_compliance:.1f}%")
+        print(f"Burnout Alerts Logged: {int(summary[5] or 0)}")
+
+        cursor.execute("""
+            SELECT 
+                d."Priority",
+                COALESCE(AVG(dm.operational_cost), 0) as avg_cost,
+                COUNT(*) as count
+            FROM "team_core_flux"."dispatch_metrics" dm
+            JOIN "team_core_flux"."current_dispatches" d
+                ON dm.dispatch_id = d."Dispatch_id"
+            GROUP BY d."Priority"
+            ORDER BY avg_cost DESC;
+        """)
+        rows = cursor.fetchall()
+
+        print("\nOperational Cost by Priority:")
+        print(f"{'Priority':<12} {'Avg Cost':<12} {'Count':<10}")
+        print("-"*80)
+        for row in rows:
+            print(f"{row[0] or 'N/A':<12} ${float(row[1] or 0):<12.2f} {row[2] or 0:<10}")
+    except psycopg2.Error as e:
+        print(f"Warning: Unable to analyze dispatch metrics: {e}")
+    finally:
+        cursor.close()
+        conn.close()
 
 def generate_summary_report():
     """Generate a comprehensive summary report"""
@@ -365,6 +440,7 @@ def main():
     analyze_skill_matching()
     analyze_pending_dispatches()
     check_available_technicians_for_pending()
+    analyze_dispatch_metrics()
     
     print("\n" + "="*80)
     print("ANALYSIS COMPLETE")
@@ -374,6 +450,8 @@ def main():
     print("2. Check pending dispatches - ensure technicians are available")
     print("3. Balance workload - distribute assignments evenly")
     print("4. Prioritize critical dispatches - ensure they get best matches")
+    print("5. Investigate SLA breaches and routing delays")
+    print("6. Address burnout alerts before they impact turnover")
     print("="*80)
 
 

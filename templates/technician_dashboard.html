@@ -183,6 +183,45 @@
             </div>
         </div>
 
+        <div class="row mb-4">
+            <div class="col-md-2">
+                <div class="stat-card">
+                    <div class="stat-number" id="avgRouting">-</div>
+                    <div class="stat-label">Avg Routing (min)</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="stat-card">
+                    <div class="stat-number" id="avgEtc">-</div>
+                    <div class="stat-label">Avg Completion (min)</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="stat-card">
+                    <div class="stat-number" id="avgCost">-</div>
+                    <div class="stat-label">Avg Cost ($)</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="stat-card">
+                    <div class="stat-number text-success" id="slaCompliance">-</div>
+                    <div class="stat-label">SLA Compliance %</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="stat-card">
+                    <div class="stat-number text-danger" id="burnoutAlerts">-</div>
+                    <div class="stat-label">Burnout Alerts</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="stat-card">
+                    <div class="stat-number text-primary" id="firstTimeFix">-</div>
+                    <div class="stat-label">First Time Fix %</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Filters -->
         <div class="filter-section">
             <div class="row">
@@ -212,6 +251,18 @@
                     <input type="text" class="form-control" id="searchInput" placeholder="Search by name..." onkeyup="filterTechnicians()">
                 </div>
             </div>
+        </div>
+
+        <div class="card mb-4">
+            <h4><i class="bi bi-graph-up"></i> Routing Trend (Last 14 Days)</h4>
+            <div class="mt-3" style="position: relative; height: 400px;">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <h4><i class="bi bi-clipboard-data"></i> Recent Assignments & SLA</h4>
+            <div id="recentAssignments" class="mt-3"></div>
         </div>
 
         <!-- Loading State -->
@@ -248,57 +299,98 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script>
         let allTechnicians = [];
         let filteredTechnicians = [];
+        let trendChart = null;
 
-        // Load data on page load
         document.addEventListener('DOMContentLoaded', function() {
-            loadStats();
-            loadTechnicians();
-            setInterval(refreshData, 30000); // Auto-refresh every 30 seconds
+            refreshData();
+            setInterval(refreshData, 30000);
         });
 
         async function loadStats() {
-            try {
-                const response = await fetch('/api/stats');
-                const data = await response.json();
-                
-                if (data.success) {
-                    document.getElementById('totalTechs').textContent = data.stats.total_technicians;
-                    document.getElementById('availableTechs').textContent = data.stats.available_technicians;
-                    document.getElementById('optimizedDispatches').textContent = data.stats.optimized_dispatches;
-                    document.getElementById('pendingDispatches').textContent = data.stats.pending_dispatches;
-                }
-            } catch (error) {
-                console.error('Error loading stats:', error);
-            }
+            const response = await fetch('/api/stats');
+            return response.json();
         }
 
         async function loadTechnicians() {
+            const response = await fetch('/api/technicians');
+            return response.json();
+        }
+
+        async function loadDispatchMetrics() {
+            const response = await fetch('/api/dispatch-metrics');
+            return response.json();
+        }
+
+        async function loadData() {
             try {
-                const response = await fetch('/api/technicians');
-                const data = await response.json();
-                
-                if (data.success) {
-                    allTechnicians = data.technicians;
+                const [statsData, technicianData, metricsData] = await Promise.all([
+                    loadStats(),
+                    loadTechnicians(),
+                    loadDispatchMetrics()
+                ]);
+
+                if (statsData.success) {
+                    document.getElementById('totalTechs').textContent = statsData.stats.total_technicians;
+                    document.getElementById('availableTechs').textContent = statsData.stats.available_technicians;
+                    document.getElementById('optimizedDispatches').textContent = statsData.stats.optimized_dispatches;
+                    document.getElementById('pendingDispatches').textContent = statsData.stats.pending_dispatches;
+                }
+
+                if (metricsData.success) {
+                    const summary = metricsData.summary;
+                    document.getElementById('avgRouting').textContent = parseFloat(summary.avg_routing_minutes || 0).toFixed(1);
+                    document.getElementById('avgEtc').textContent = parseFloat(summary.avg_etc_minutes || 0).toFixed(1);
+                    document.getElementById('avgCost').textContent = parseFloat(summary.avg_cost || 0).toFixed(2);
+                    document.getElementById('slaCompliance').textContent = parseFloat(summary.sla_compliance_pct || 0).toFixed(1);
+                    document.getElementById('burnoutAlerts').textContent = summary.burnout_alerts || 0;
+                    document.getElementById('firstTimeFix').textContent = parseFloat(summary.first_time_fix_rate || 0).toFixed(1);
+
+                    console.log('Trend data:', metricsData.trend);
+                    console.log('Recent data:', metricsData.recent);
+                    
+                    renderTrend(metricsData.trend);
+                    renderRecentAssignments(metricsData.recent);
+                } else {
+                    console.error('Metrics data not successful:', metricsData);
+                }
+
+                if (technicianData.success) {
+                    allTechnicians = technicianData.technicians;
                     populateFilters();
                     filterTechnicians();
                     document.getElementById('loadingState').style.display = 'none';
                     document.getElementById('techniciansList').style.display = 'block';
                 } else {
-                    alert('Error loading technicians: ' + data.error);
+                    console.error('Error loading technicians:', technicianData.error);
+                    document.getElementById('loadingState').style.display = 'none';
+                    document.getElementById('techniciansList').innerHTML = 
+                        '<div class="alert alert-warning">Some data could not be loaded. Please refresh the page.</div>';
                 }
             } catch (error) {
-                console.error('Error loading technicians:', error);
-                document.getElementById('loadingState').innerHTML = 
-                    '<div class="alert alert-danger">Error loading data. Please refresh the page.</div>';
+                console.error('Error loading data:', error);
+                document.getElementById('loadingState').style.display = 'none';
+                document.getElementById('techniciansList').style.display = 'block';
+                // Still try to show data even if there's a partial error
+                if (allTechnicians && allTechnicians.length > 0) {
+                    populateFilters();
+                    filterTechnicians();
+                }
             }
+        }
+
+        function getProperty(obj, propName) {
+            // Helper to get property with case-insensitive matching
+            return obj[propName] || obj[propName.charAt(0).toLowerCase() + propName.slice(1)] || 
+                   obj[propName.toLowerCase()] || obj[propName.toUpperCase()] || '';
         }
 
         function populateFilters() {
             // Populate state filter
-            const states = [...new Set(allTechnicians.map(t => t.State).filter(s => s))];
+            const states = [...new Set(allTechnicians.map(t => getProperty(t, 'State')).filter(s => s))];
             const stateFilter = document.getElementById('stateFilter');
             states.forEach(state => {
                 const option = document.createElement('option');
@@ -308,7 +400,7 @@
             });
 
             // Populate skill filter
-            const skills = [...new Set(allTechnicians.map(t => t.Primary_skill).filter(s => s))];
+            const skills = [...new Set(allTechnicians.map(t => getProperty(t, 'Primary_skill')).filter(s => s))];
             const skillFilter = document.getElementById('skillFilter');
             skills.forEach(skill => {
                 const option = document.createElement('option');
@@ -325,12 +417,18 @@
             const searchInput = document.getElementById('searchInput').value.toLowerCase();
 
             filteredTechnicians = allTechnicians.filter(tech => {
-                const matchStatus = statusFilter === 'all' || tech.Availability_Status === statusFilter;
-                const matchState = stateFilter === 'all' || tech.State === stateFilter;
-                const matchSkill = skillFilter === 'all' || tech.Primary_skill === skillFilter;
+                const techStatus = getProperty(tech, 'Availability_Status') || getProperty(tech, 'availability_status');
+                const techState = getProperty(tech, 'State');
+                const techSkill = getProperty(tech, 'Primary_skill');
+                const techName = getProperty(tech, 'Name');
+                const techId = getProperty(tech, 'Technician_id');
+
+                const matchStatus = statusFilter === 'all' || techStatus === statusFilter;
+                const matchState = stateFilter === 'all' || techState === stateFilter;
+                const matchSkill = skillFilter === 'all' || techSkill === skillFilter;
                 const matchSearch = !searchInput || 
-                    (tech.Name && tech.Name.toLowerCase().includes(searchInput)) ||
-                    (tech.Technician_id && tech.Technician_id.toLowerCase().includes(searchInput));
+                    (techName && techName.toLowerCase().includes(searchInput)) ||
+                    (techId && techId.toLowerCase().includes(searchInput));
 
                 return matchStatus && matchState && matchSkill && matchSearch;
             });
@@ -355,32 +453,56 @@
 
         function createTechnicianCard(tech) {
             const div = document.createElement('div');
-            div.className = `technician-card ${tech.Availability_Status.toLowerCase().replace(' ', '-')}`;
             
-            const utilizationPercent = tech.Utilization_Percentage || 0;
+            // Get properties with fallback
+            const availabilityStatus = getProperty(tech, 'Availability_Status') || getProperty(tech, 'availability_status') || 'Unknown';
+            const utilizationPercent = parseFloat(getProperty(tech, 'Utilization_Percentage') || getProperty(tech, 'utilization_percentage') || 0);
+            const name = getProperty(tech, 'Name') || 'N/A';
+            const techId = getProperty(tech, 'Technician_id') || 'N/A';
+            const city = getProperty(tech, 'City') || 'N/A';
+            const state = getProperty(tech, 'State') || 'N/A';
+            const primarySkill = getProperty(tech, 'Primary_skill') || 'N/A';
+            const assignedDispatches = getProperty(tech, 'Assigned_Dispatches') || getProperty(tech, 'assigned_dispatches') || 0;
+            const currentAssignments = getProperty(tech, 'Current_assignments') || 0;
+            const workloadCapacity = getProperty(tech, 'Workload_capacity') || 0;
+            const criticalCount = getProperty(tech, 'Critical_Count') || getProperty(tech, 'critical_count') || 0;
+            const highCount = getProperty(tech, 'High_Count') || getProperty(tech, 'high_count') || 0;
+            const normalCount = getProperty(tech, 'Normal_Count') || getProperty(tech, 'normal_count') || 0;
+            const lowCount = getProperty(tech, 'Low_Count') || getProperty(tech, 'low_count') || 0;
+            const statusBadge = tech.status_badge || 'secondary';
+            const priorityLevel = tech.priority_level || 'None';
+            const priorityColor = tech.priority_color || 'gray';
+            
+            div.className = `technician-card ${availabilityStatus.toLowerCase().replace(' ', '-')}`;
+            
             const progressColor = utilizationPercent < 50 ? 'success' : 
                                  utilizationPercent < 80 ? 'warning' : 'danger';
+            const burnoutBadge = utilizationPercent >= 85 ? `
+                        <span class="badge bg-danger ms-2">
+                            <i class="bi bi-exclamation-triangle"></i> Burnout Risk
+                        </span>` : '';
 
             div.innerHTML = `
                 <div class="row">
                     <div class="col-md-8">
                         <div class="technician-name">
-                            <i class="bi bi-person-circle"></i> ${tech.Name || 'N/A'}
+                            <i class="bi bi-person-circle"></i> ${name}
                         </div>
-                        <div class="technician-id">ID: ${tech.Technician_id}</div>
+                        <div class="technician-id">ID: ${techId}</div>
                         <div class="mt-2">
-                            <span class="status-badge bg-${tech.status_badge} text-white">
-                                ${tech.Availability_Status}
+                            <span class="status-badge bg-${statusBadge} text-white">
+                                ${availabilityStatus}
                             </span>
-                            ${tech.priority_level && tech.priority_level !== 'None' ? `
-                                <span class="priority-badge bg-${tech.priority_color} text-white ms-2">
-                                    <i class="bi bi-exclamation-triangle"></i> ${tech.priority_level} Priority
+                            ${priorityLevel && priorityLevel !== 'None' ? `
+                                <span class="priority-badge bg-${priorityColor} text-white ms-2">
+                                    <i class="bi bi-exclamation-triangle"></i> ${priorityLevel} Priority
                                 </span>
                             ` : ''}
+                            ${burnoutBadge}
                         </div>
                     </div>
                     <div class="col-md-4 text-end">
-                        <button class="btn btn-sm btn-outline-primary" onclick="showTechnicianDetails('${tech.Technician_id}')">
+                        <button class="btn btn-sm btn-outline-primary" onclick="showTechnicianDetails('${techId}')">
                             <i class="bi bi-eye"></i> View Details
                         </button>
                     </div>
@@ -390,21 +512,21 @@
                     <div class="col-md-6">
                         <div class="info-row">
                             <span class="info-label"><i class="bi bi-geo-alt"></i> Location:</span>
-                            <span>${tech.City || 'N/A'}, ${tech.State || 'N/A'}</span>
+                            <span>${city}, ${state}</span>
                         </div>
                         <div class="info-row">
                             <span class="info-label"><i class="bi bi-tools"></i> Primary Skill:</span>
-                            <span>${tech.Primary_skill || 'N/A'}</span>
+                            <span>${primarySkill}</span>
                         </div>
                         <div class="info-row">
                             <span class="info-label"><i class="bi bi-clipboard-check"></i> Assigned Dispatches:</span>
-                            <span><strong>${tech.Assigned_Dispatches || 0}</strong></span>
+                            <span><strong>${assignedDispatches}</strong></span>
                         </div>
                     </div>
                     <div class="col-md-6">
                         <div class="info-row">
                             <span class="info-label">Workload:</span>
-                            <span>${tech.Current_assignments || 0} / ${tech.Workload_capacity || 0}</span>
+                            <span>${currentAssignments} / ${workloadCapacity}</span>
                         </div>
                         <div class="progress-bar-custom mt-2">
                             <div class="progress-bar bg-${progressColor}" 
@@ -418,10 +540,10 @@
                         </div>
                         <div class="mt-2">
                             <small class="text-muted">
-                                Critical: ${tech.Critical_Count || 0} | 
-                                High: ${tech.High_Count || 0} | 
-                                Normal: ${tech.Normal_Count || 0} | 
-                                Low: ${tech.Low_Count || 0}
+                                Critical: ${criticalCount} | 
+                                High: ${highCount} | 
+                                Normal: ${normalCount} | 
+                                Low: ${lowCount}
                             </small>
                         </div>
                     </div>
@@ -504,11 +626,230 @@
             }
         }
 
+        function renderTrend(trend) {
+            console.log('renderTrend called with:', trend);
+            
+            const canvasElement = document.getElementById('trendChart');
+            if (!canvasElement) {
+                console.error('Canvas element trendChart not found!');
+                return;
+            }
+            
+            // Destroy existing chart if it exists
+            if (trendChart) {
+                try {
+                    trendChart.destroy();
+                } catch (e) {
+                    console.error('Error destroying chart:', e);
+                }
+                trendChart = null;
+            }
+            
+            if (!trend || trend.length === 0) {
+                console.warn('No trend data to display');
+                canvasElement.parentElement.innerHTML = '<p class="text-muted text-center mt-5">No trend data available. Run enhanced_dispatch_agent.py to generate metrics.</p>';
+                return;
+            }
+            
+            console.log(`Rendering trend chart with ${trend.length} data points`);
+            
+            // Prepare data
+            const labels = trend.map(item => {
+                const date = new Date(item.day);
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            });
+            
+            const routingData = trend.map(item => parseFloat(item.avg_routing_minutes || 0));
+            const etcData = trend.map(item => parseFloat(item.avg_etc_minutes || 0));
+            
+            console.log('Labels:', labels);
+            console.log('Routing data:', routingData);
+            console.log('ETC data:', etcData);
+            
+            // Create chart
+            try {
+                trendChart = new Chart(canvasElement, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                        {
+                            label: 'Avg Routing Time (min)',
+                            data: routingData,
+                            borderColor: 'rgb(102, 126, 234)',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 5,
+                            pointHoverRadius: 7,
+                            pointBackgroundColor: 'rgb(102, 126, 234)',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2
+                        },
+                        {
+                            label: 'Avg Completion Time (min)',
+                            data: etcData,
+                            borderColor: 'rgb(34, 197, 94)',
+                            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 5,
+                            pointHoverRadius: 7,
+                            pointBackgroundColor: 'rgb(34, 197, 94)',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                font: {
+                                    size: 14,
+                                    weight: 'bold'
+                                },
+                                padding: 20,
+                                usePointStyle: true
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            padding: 12,
+                            titleFont: {
+                                size: 14,
+                                weight: 'bold'
+                            },
+                            bodyFont: {
+                                size: 13
+                            },
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.parsed.y + ' min';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Time (minutes)',
+                                font: {
+                                    size: 14,
+                                    weight: 'bold'
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            },
+                            ticks: {
+                                font: {
+                                    size: 12
+                                }
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Date',
+                                font: {
+                                    size: 14,
+                                    weight: 'bold'
+                                }
+                            },
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                font: {
+                                    size: 12
+                                },
+                                maxRotation: 45,
+                                minRotation: 45
+                            }
+                        }
+                    }
+                }
+                });
+                console.log('Chart created successfully!');
+            } catch (error) {
+                console.error('Error creating chart:', error);
+                canvasElement.parentElement.innerHTML = `<div class="alert alert-danger">Error creating chart: ${error.message}</div>`;
+            }
+        }
+
+        function renderRecentAssignments(assignments) {
+            console.log('renderRecentAssignments called with:', assignments);
+            
+            const container = document.getElementById('recentAssignments');
+            if (!container) {
+                console.error('recentAssignments container not found!');
+                return;
+            }
+            
+            if (!assignments || assignments.length === 0) {
+                console.warn('No recent assignments to display');
+                container.innerHTML = '<p class="text-muted text-center mt-3">No recent assignments. Run enhanced_dispatch_agent.py to process dispatches.</p>';
+                return;
+            }
+            
+            console.log(`Rendering ${assignments.length} recent assignments`);
+            
+            let html = `<div class="table-responsive">
+                <table class="table table-striped table-hover">
+                    <thead>
+                        <tr>
+                            <th>Dispatch</th>
+                            <th>Priority</th>
+                            <th>Skill</th>
+                            <th>Location</th>
+                            <th>Routing (min)</th>
+                            <th>ETC (min)</th>
+                            <th>Cost ($)</th>
+                            <th>SLA</th>
+                            <th>Fallbacks</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+            
+            assignments.forEach(item => {
+                const routingMin = ((item.routing_seconds || 0) / 60).toFixed(1);
+                const slaBadge = item.sla_breached ? '<span class="badge bg-danger">Breached</span>' : '<span class="badge bg-success">Met</span>';
+                const fallbackList = item.fallback && item.fallback.length ? item.fallback.join(', ') : 'None';
+                html += `<tr>
+                    <td>${item.dispatch_id || 'N/A'}</td>
+                    <td><span class="badge bg-${item.priority === 'Critical' ? 'danger' : item.priority === 'High' ? 'warning' : 'info'}">${item.priority || 'N/A'}</span></td>
+                    <td>${item.required_skill || 'N/A'}</td>
+                    <td>${item.city || 'N/A'}, ${item.state || 'N/A'}</td>
+                    <td>${routingMin}</td>
+                    <td>${item.etc_minutes || 0}</td>
+                    <td>$${parseFloat(item.operational_cost || 0).toFixed(2)}</td>
+                    <td>${slaBadge}</td>
+                    <td><small>${fallbackList}</small></td>
+                </tr>`;
+            });
+            
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+            console.log('Recent assignments rendered successfully');
+        }
+
         function refreshData() {
             document.getElementById('loadingState').style.display = 'block';
             document.getElementById('techniciansList').style.display = 'none';
-            loadStats();
-            loadTechnicians();
+            loadData();
         }
     </script>
 </body>

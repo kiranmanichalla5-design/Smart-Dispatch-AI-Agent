@@ -33,6 +33,28 @@ def index():
     return render_template('technician_dashboard.html')
 
 
+@app.route('/api/test')
+def test_api():
+    """Test API endpoint"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM "team_core_flux"."technicians";')
+        count = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+        return jsonify({
+            'success': True,
+            'message': f'API working! Found {count} technicians',
+            'technician_count': count
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/technicians')
 def get_technicians():
     """Get all technicians with their status and assignments"""
@@ -58,13 +80,17 @@ def get_technicians():
                     WHEN t."Current_assignments" >= (t."Workload_capacity" * 0.8) THEN 'Nearly Full'
                     ELSE 'Available'
                 END as Availability_Status,
-                ROUND(
-                    CASE 
-                        WHEN t."Workload_capacity" > 0 
-                        THEN (t."Current_assignments"::FLOAT / t."Workload_capacity") * 100
-                        ELSE 0 
-                    END, 
-                    2
+                CAST(
+                    ROUND(
+                        CAST(
+                            (CASE 
+                                WHEN t."Workload_capacity" > 0 
+                                THEN (t."Current_assignments"::FLOAT / t."Workload_capacity") * 100
+                                ELSE 0 
+                            END) AS numeric
+                        ), 
+                        2
+                    ) AS numeric
                 ) as Utilization_Percentage,
                 COUNT(d."Dispatch_id") as Assigned_Dispatches,
                 COUNT(CASE WHEN d."Priority" = 'Critical' THEN 1 END) as Critical_Count,
@@ -96,16 +122,41 @@ def get_technicians():
         
         technicians = []
         for row in rows:
-            tech = dict(zip(columns, row))
+            tech_dict = dict(zip(columns, row))
+            
+            # Normalize all keys to match expected format (handle case sensitivity)
+            tech = {}
+            for key, value in tech_dict.items():
+                # Convert to title case for consistency
+                normalized_key = key.replace('_', ' ').title().replace(' ', '_')
+                tech[normalized_key] = value
+                tech[key] = value  # Keep original too
+            
+            # Get values with case-insensitive key access
+            availability_status = (tech.get('Availability_Status') or 
+                                 tech.get('availability_status') or 
+                                 tech_dict.get('availability_status', 'Unknown'))
+            critical_count = (tech.get('Critical_Count') or 
+                            tech.get('critical_count') or 
+                            tech_dict.get('critical_count') or 0)
+            high_count = (tech.get('High_Count') or 
+                        tech.get('high_count') or 
+                        tech_dict.get('high_count') or 0)
+            normal_count = (tech.get('Normal_Count') or 
+                          tech.get('normal_count') or 
+                          tech_dict.get('normal_count') or 0)
+            low_count = (tech.get('Low_Count') or 
+                       tech.get('low_count') or 
+                       tech_dict.get('low_count') or 0)
             
             # Determine status color
-            if tech['Availability_Status'] == 'Available':
+            if availability_status == 'Available':
                 tech['status_color'] = 'green'
                 tech['status_badge'] = 'success'
-            elif tech['Availability_Status'] == 'Nearly Full':
+            elif availability_status == 'Nearly Full':
                 tech['status_color'] = 'orange'
                 tech['status_badge'] = 'warning'
-            elif tech['Availability_Status'] == 'Fully Booked':
+            elif availability_status == 'Fully Booked':
                 tech['status_color'] = 'red'
                 tech['status_badge'] = 'danger'
             else:
@@ -113,10 +164,10 @@ def get_technicians():
                 tech['status_badge'] = 'secondary'
             
             # Calculate priority level
-            total_priority = (tech['Critical_Count'] or 0) * 4 + \
-                           (tech['High_Count'] or 0) * 3 + \
-                           (tech['Normal_Count'] or 0) * 2 + \
-                           (tech['Low_Count'] or 0) * 1
+            total_priority = critical_count * 4 + \
+                           high_count * 3 + \
+                           normal_count * 2 + \
+                           low_count * 1
             
             if total_priority >= 10:
                 tech['priority_level'] = 'Critical'
@@ -285,6 +336,163 @@ def get_stats():
             'success': False,
             'error': str(e)
         }), 500
+
+
+@app.route('/api/dispatch-metrics')
+def get_dispatch_metrics():
+    """Return advanced metrics for routing, ETC, cost, and SLA"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if dispatch_metrics table exists
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'team_core_flux' 
+                AND table_name = 'dispatch_metrics'
+            );
+        """)
+        table_exists = cursor.fetchone()[0]
+        
+        if not table_exists:
+            # Return empty metrics if table doesn't exist
+            cursor.close()
+            conn.close()
+            return jsonify({
+                'success': True,
+                'summary': {
+                    'avg_routing_minutes': 0,
+                    'avg_etc_minutes': 0,
+                    'avg_cost': 0,
+                    'sla_compliance_pct': 0,
+                    'burnout_alerts': 0,
+                    'first_time_fix_rate': 0,
+                    'ftf_by_priority': {}
+                },
+                'trend': [],
+                'recent': [],
+                'note': 'Run enhanced_dispatch_agent.py to populate metrics'
+            })
+
+        cursor.execute("""
+            SELECT 
+                COALESCE(AVG(ABS(routing_seconds)), 0) as avg_routing,
+                COALESCE(AVG(estimated_completion_minutes), 0) as avg_etc,
+                COALESCE(AVG(operational_cost), 0) as avg_cost,
+                COALESCE(SUM(CASE WHEN sla_breached THEN 1 ELSE 0 END), 0) as sla_breaches,
+                COUNT(*) as total_records,
+                COALESCE(SUM(CASE WHEN burnout_risk THEN 1 ELSE 0 END), 0) as burnout_alerts
+            FROM "team_core_flux"."dispatch_metrics";
+        """)
+        avg_row = cursor.fetchone()
+
+        cursor.execute("""
+            SELECT 
+                DATE(updated_at) as day,
+                COALESCE(AVG(ABS(routing_seconds)) / 60.0, 0) as avg_routing_minutes,
+                COALESCE(AVG(estimated_completion_minutes), 0) as avg_etc_minutes
+            FROM "team_core_flux"."dispatch_metrics"
+            GROUP BY DATE(updated_at)
+            ORDER BY DATE(updated_at) ASC
+            LIMIT 14;
+        """)
+        trend_rows = cursor.fetchall()
+        trend = [
+            {
+                'day': row[0].isoformat(),
+                'avg_routing_minutes': round(float(row[1] or 0), 2),
+                'avg_etc_minutes': round(float(row[2] or 0), 2)
+            }
+            for row in trend_rows
+        ]
+
+        cursor.execute("""
+            SELECT 
+                dh."Priority",
+                AVG(CASE WHEN dh."First_time_fix" = 1 THEN 1 ELSE 0 END) as ftf_rate
+            FROM "team_core_flux"."dispatch_history" dh
+            WHERE dh."Status" = 'Completed'
+            GROUP BY dh."Priority";
+        """)
+        ftf_rows = cursor.fetchall()
+        ftf_map = {row[0] or 'Unknown': round((row[1] or 0) * 100, 1) for row in ftf_rows}
+        overall_ftf = round((sum((row[1] or 0) for row in ftf_rows) / len(ftf_rows)) * 100, 1) if ftf_rows else 0.0
+
+        cursor.execute("""
+            SELECT 
+                dm.dispatch_id,
+                dm.routing_seconds,
+                dm.estimated_completion_minutes,
+                dm.operational_cost,
+                dm.sla_breached,
+                dm.fallback_technicians,
+                dm.burnout_risk,
+                d."Priority",
+                d."Required_skill",
+                d."City",
+                d."State",
+                d."Optimized_technician_id"
+            FROM "team_core_flux"."dispatch_metrics" dm
+            JOIN "team_core_flux"."current_dispatches" d
+                ON dm.dispatch_id = d."Dispatch_id"
+            ORDER BY dm.updated_at DESC
+            LIMIT 25;
+        """)
+        recent = []
+        for row in cursor.fetchall():
+            fallback = []
+            try:
+                # Handle fallback_technicians - it might be a string, list, or None
+                if row[5]:
+                    if isinstance(row[5], str):
+                        fallback = json.loads(row[5])
+                    elif isinstance(row[5], list):
+                        fallback = row[5]
+                    else:
+                        fallback = []
+            except (json.JSONDecodeError, TypeError):
+                fallback = []
+            
+            recent.append({
+                'dispatch_id': row[0],
+                'routing_seconds': row[1] or 0,
+                'etc_minutes': row[2] or 0,
+                'operational_cost': float(row[3] or 0),
+                'sla_breached': bool(row[4]),
+                'fallback': fallback,
+                'burnout_risk': bool(row[6]),
+                'priority': row[7] or 'N/A',
+                'required_skill': row[8] or 'N/A',
+                'city': row[9] or 'N/A',
+                'state': row[10] or 'N/A',
+                'technician_id': row[11] or 'N/A'
+            })
+
+        cursor.close()
+        conn.close()
+
+        total_records = int(avg_row[4] or 0)
+        sla_compliance = 0.0
+        if total_records > 0:
+            sla_compliance = round(100 - ((float(avg_row[3] or 0) / total_records) * 100), 1)
+
+        return jsonify({
+            'success': True,
+            'summary': {
+                'avg_routing_minutes': round(float(avg_row[0] or 0) / 60.0, 2),
+                'avg_etc_minutes': round(float(avg_row[1] or 0), 2),
+                'avg_cost': round(float(avg_row[2] or 0), 2),
+                'sla_compliance_pct': sla_compliance,
+                'burnout_alerts': int(avg_row[5] or 0),
+                'first_time_fix_rate': overall_ftf,
+                'ftf_by_priority': ftf_map
+            },
+            'trend': trend,
+            'recent': recent
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 if __name__ == '__main__':

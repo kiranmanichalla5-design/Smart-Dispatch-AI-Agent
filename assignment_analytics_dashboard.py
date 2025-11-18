@@ -71,6 +71,29 @@ def index():
         </div>
     </div>
 
+    <div class="stats-grid">
+        <div class="stat-box">
+            <div class="stat-number" id="avgRoutingMinutes">-</div>
+            <div class="stat-label">Avg Routing (min)</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-number" id="avgEtcMinutes">-</div>
+            <div class="stat-label">Avg Completion (min)</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-number" id="avgOperationalCost">-</div>
+            <div class="stat-label">Avg Cost ($)</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-number" id="slaCompliance">-</div>
+            <div class="stat-label">SLA Compliance (%)</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-number" id="firstTimeFix">-</div>
+            <div class="stat-label">First Time Fix (%)</div>
+        </div>
+    </div>
+
     <div class="card">
         <h2>📈 Status Distribution</h2>
         <canvas id="statusChart"></canvas>
@@ -87,6 +110,16 @@ def index():
     </div>
 
     <div class="card">
+        <h2>⚡ Routing vs Completion Trend</h2>
+        <canvas id="routingTrendChart"></canvas>
+    </div>
+
+    <div class="card">
+        <h2>💰 Operational Cost by Priority</h2>
+        <canvas id="costChart"></canvas>
+    </div>
+
+    <div class="card">
         <h2>👥 Technician Assignment Summary</h2>
         <div id="technicianTable"></div>
     </div>
@@ -97,16 +130,17 @@ def index():
     </div>
 
     <script>
-        let statusChart, priorityChart, skillChart;
+        let statusChart, priorityChart, skillChart, routingTrendChart, costChart;
 
         async function loadData() {
             try {
-                const [summary, priority, skill, technicians, priorityStatus] = await Promise.all([
+                const [summary, priority, skill, technicians, priorityStatus, metrics] = await Promise.all([
                     fetch('/api/summary').then(r => r.json()),
                     fetch('/api/priority').then(r => r.json()),
                     fetch('/api/skill').then(r => r.json()),
                     fetch('/api/technicians').then(r => r.json()),
-                    fetch('/api/priority-status').then(r => r.json())
+                    fetch('/api/priority-status').then(r => r.json()),
+                    fetch('/api/metrics').then(r => r.json())
                 ]);
 
                 // Update stats
@@ -114,6 +148,14 @@ def index():
                 document.getElementById('completedDispatches').textContent = summary.completed || 0;
                 document.getElementById('pendingDispatches').textContent = summary.pending || 0;
                 document.getElementById('uniqueTechnicians').textContent = summary.unique_technicians || 0;
+
+                if (metrics.summary) {
+                    document.getElementById('avgRoutingMinutes').textContent = metrics.summary.avg_routing_minutes.toFixed(1);
+                    document.getElementById('avgEtcMinutes').textContent = metrics.summary.avg_etc_minutes.toFixed(1);
+                    document.getElementById('avgOperationalCost').textContent = metrics.summary.avg_cost.toFixed(2);
+                    document.getElementById('slaCompliance').textContent = metrics.summary.sla_compliance_pct.toFixed(1);
+                    document.getElementById('firstTimeFix').textContent = metrics.summary.first_time_fix_rate.toFixed(1);
+                }
 
                 // Status Chart
                 if (statusChart) statusChart.destroy();
@@ -221,6 +263,55 @@ def index():
                 });
                 psHtml += '</table>';
                 document.getElementById('priorityStatusTable').innerHTML = psHtml;
+
+                // Routing Trend Chart
+                if (routingTrendChart) routingTrendChart.destroy();
+                const trendLabels = metrics.trend.map(t => t.day);
+                const routingData = metrics.trend.map(t => t.avg_routing_minutes);
+                const etcData = metrics.trend.map(t => t.avg_etc_minutes);
+                routingTrendChart = new Chart(document.getElementById('routingTrendChart'), {
+                    type: 'line',
+                    data: {
+                        labels: trendLabels,
+                        datasets: [
+                            {
+                                label: 'Avg Routing (min)',
+                                data: routingData,
+                                borderColor: '#ff6384',
+                                tension: 0.3
+                            },
+                            {
+                                label: 'Avg Completion (min)',
+                                data: etcData,
+                                borderColor: '#36a2eb',
+                                tension: 0.3
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: { y: { beginAtZero: true } }
+                    }
+                });
+
+                // Cost Chart
+                if (costChart) costChart.destroy();
+                const costLabels = metrics.cost_by_priority.map(c => c.priority);
+                const costValues = metrics.cost_by_priority.map(c => c.avg_cost);
+                costChart = new Chart(document.getElementById('costChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: costLabels,
+                        datasets: [{
+                            label: 'Avg Cost ($)',
+                            data: costValues,
+                            backgroundColor: '#ffa600'
+                        }]
+                    },
+                    options: {
+                        scales: { y: { beginAtZero: true } }
+                    }
+                });
 
             } catch (error) {
                 console.error('Error loading data:', error);
@@ -413,6 +504,90 @@ def get_priority_status():
     conn.close()
     
     return jsonify(results)
+
+@app.route('/api/metrics')
+def get_metrics():
+    """Return advanced metrics such as routing trend and costs"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT 
+            COALESCE(AVG(routing_seconds) / 60.0, 0) as avg_routing_minutes,
+            COALESCE(AVG(estimated_completion_minutes), 0) as avg_etc_minutes,
+            COALESCE(AVG(operational_cost), 0) as avg_cost,
+            COALESCE(SUM(CASE WHEN sla_breached THEN 1 ELSE 0 END), 0) as sla_breaches,
+            COUNT(*) as total_records
+        FROM "team_core_flux"."dispatch_metrics";
+    """)
+    summary_row = cursor.fetchone()
+    total_records = summary_row[4] or 0
+    sla_breaches = summary_row[3] or 0
+    sla_compliance = 0.0
+    if total_records > 0:
+        sla_compliance = round(100 - (sla_breaches / total_records) * 100, 1)
+
+    cursor.execute("""
+        SELECT 
+            DATE(updated_at) as day,
+            COALESCE(AVG(routing_seconds) / 60.0, 0) as avg_routing_minutes,
+            COALESCE(AVG(estimated_completion_minutes), 0) as avg_etc_minutes
+        FROM "team_core_flux"."dispatch_metrics"
+        GROUP BY DATE(updated_at)
+        ORDER BY DATE(updated_at)
+        LIMIT 30;
+    """)
+    trend = [
+        {
+            'day': row[0].isoformat(),
+            'avg_routing_minutes': round(row[1], 2),
+            'avg_etc_minutes': round(row[2], 2)
+        }
+        for row in cursor.fetchall()
+    ]
+
+    cursor.execute("""
+        SELECT 
+            d."Priority",
+            COALESCE(AVG(dm.operational_cost), 0) as avg_cost,
+            COUNT(*) as count
+        FROM "team_core_flux"."dispatch_metrics" dm
+        JOIN "team_core_flux"."current_dispatches" d
+            ON dm.dispatch_id = d."Dispatch_id"
+        GROUP BY d."Priority"
+        ORDER BY avg_cost DESC;
+    """)
+    cost_by_priority = [
+        {
+            'priority': row[0] or 'Unknown',
+            'avg_cost': float(row[1] or 0),
+            'count': row[2] or 0
+        }
+        for row in cursor.fetchall()
+    ]
+
+    cursor.execute("""
+        SELECT 
+            AVG(CASE WHEN "First_time_fix" = 1 THEN 1 ELSE 0 END) as ftf_rate
+        FROM "team_core_flux"."dispatch_history"
+        WHERE "Status" = 'Completed';
+    """)
+    ftf = cursor.fetchone()[0] or 0
+
+    cursor.close()
+    conn.close()
+
+    return jsonify({
+        'summary': {
+            'avg_routing_minutes': round(summary_row[0], 2),
+            'avg_etc_minutes': round(summary_row[1], 2),
+            'avg_cost': round(summary_row[2], 2),
+            'sla_compliance_pct': sla_compliance,
+            'first_time_fix_rate': round(ftf * 100, 1)
+        },
+        'trend': trend,
+        'cost_by_priority': cost_by_priority
+    })
 
 if __name__ == '__main__':
     print("=" * 60)
